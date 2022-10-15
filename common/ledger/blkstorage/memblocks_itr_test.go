@@ -1,9 +1,3 @@
-/*
-Copyright IBM Corp. All Rights Reserved.
-
-SPDX-License-Identifier: Apache-2.0
-*/
-
 package blkstorage
 
 import (
@@ -16,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestBlocksItrBlockingNext(t *testing.T) {
+func TestMemBlocksItrBlockingNext(t *testing.T) {
 	env := newTestEnv(t, NewConf(testPath(), 0))
 	defer env.Cleanup()
 	blkfileMgrWrapper := newTestBlockfileWrapper(env, "testLedger")
@@ -31,16 +25,16 @@ func TestBlocksItrBlockingNext(t *testing.T) {
 	defer itr.Close()
 	readyChan := make(chan struct{})
 	doneChan := make(chan bool)
-	go testIterateAndVerify(t, itr, blocks[1:], 4, readyChan, doneChan)
+	go testMemIterateAndVerify(t, itr, blocks[1:], 4, readyChan, doneChan)
 	<-readyChan
-	testAppendBlocks(blkfileMgrWrapper, blocks[5:7])
+	testMemAppendBlocks(blkfileMgrWrapper, blocks[5:7])
 	blkfileMgr.moveToNextFile()
 	time.Sleep(time.Millisecond * 10)
-	testAppendBlocks(blkfileMgrWrapper, blocks[7:])
+	testMemAppendBlocks(blkfileMgrWrapper, blocks[7:])
 	<-doneChan
 }
 
-func TestBlockItrClose(t *testing.T) {
+func TestMemBlockItrClose(t *testing.T) {
 	env := newTestEnv(t, NewConf(testPath(), 0))
 	defer env.Cleanup()
 	blkfileMgrWrapper := newTestBlockfileWrapper(env, "testLedger")
@@ -62,7 +56,7 @@ func TestBlockItrClose(t *testing.T) {
 	require.Nil(t, bh)
 }
 
-func TestRaceToDeadlock(t *testing.T) {
+func TestMemRaceToDeadlock(t *testing.T) {
 	env := newTestEnv(t, NewConf(testPath(), 0))
 	defer env.Cleanup()
 	blkfileMgrWrapper := newTestBlockfileWrapper(env, "testLedger")
@@ -95,7 +89,7 @@ func TestRaceToDeadlock(t *testing.T) {
 	}
 }
 
-func TestBlockItrCloseWithoutRetrieve(t *testing.T) {
+func TestMemBlockItrCloseWithoutRetrieve(t *testing.T) {
 	env := newTestEnv(t, NewConf(testPath(), 0))
 	defer env.Cleanup()
 	blkfileMgrWrapper := newTestBlockfileWrapper(env, "testLedger")
@@ -109,7 +103,7 @@ func TestBlockItrCloseWithoutRetrieve(t *testing.T) {
 	itr.Close()
 }
 
-func TestCloseMultipleItrsWaitForFutureBlock(t *testing.T) {
+func TestMemCloseMultipleItrsWaitForFutureBlock(t *testing.T) {
 	env := newTestEnv(t, NewConf(testPath(), 0))
 	defer env.Cleanup()
 	blkfileMgrWrapper := newTestBlockfileWrapper(env, "testLedger")
@@ -123,12 +117,12 @@ func TestCloseMultipleItrsWaitForFutureBlock(t *testing.T) {
 	itr1, err := blkfileMgr.retrieveBlocks(7)
 	require.NoError(t, err)
 	// itr1 does not retrieve any block because it closes before new blocks are added
-	go iterateInBackground(t, itr1, 9, wg, []uint64{})
+	go memIterateInBackground(t, itr1, 9, wg, []uint64{})
 
 	itr2, err := blkfileMgr.retrieveBlocks(8)
 	require.NoError(t, err)
 	// itr2 retrieves two blocks 8 and 9. Because it started waiting for 8 and quits at 9
-	go iterateInBackground(t, itr2, 9, wg, []uint64{8, 9})
+	go memIterateInBackground(t, itr2, 9, wg, []uint64{8, 9})
 
 	// sleep for the background iterators to get started
 	time.Sleep(2 * time.Second)
@@ -137,7 +131,7 @@ func TestCloseMultipleItrsWaitForFutureBlock(t *testing.T) {
 	wg.Wait()
 }
 
-func iterateInBackground(t *testing.T, itr *blocksItr, quitAfterBlkNum uint64, wg *sync.WaitGroup, expectedBlockNums []uint64) {
+func memIterateInBackground(t *testing.T, itr *blocksItr, quitAfterBlkNum uint64, wg *sync.WaitGroup, expectedBlockNums []uint64) {
 	defer wg.Done()
 	retrievedBlkNums := []uint64{}
 	defer func() { require.Equal(t, expectedBlockNums, retrievedBlkNums) }()
@@ -157,7 +151,7 @@ func iterateInBackground(t *testing.T, itr *blocksItr, quitAfterBlkNum uint64, w
 	}
 }
 
-func testIterateAndVerify(t *testing.T, itr *blocksItr, blocks []*common.Block, readyAt int, readyChan chan<- struct{}, doneChan chan bool) {
+func testMemIterateAndVerify(t *testing.T, itr *blocksItr, blocks []*common.Block, readyAt int, readyChan chan<- struct{}, doneChan chan bool) {
 	blocksIterated := 0
 	for {
 		t.Logf("blocksIterated: %v", blocksIterated)
@@ -175,6 +169,6 @@ func testIterateAndVerify(t *testing.T, itr *blocksItr, blocks []*common.Block, 
 	doneChan <- true
 }
 
-func testAppendBlocks(blkfileMgrWrapper *testBlockfileMgrWrapper, blocks []*common.Block) {
+func testMemAppendBlocks(blkfileMgrWrapper *testBlockfileMgrWrapper, blocks []*common.Block) {
 	blkfileMgrWrapper.addBlocks(blocks)
 }

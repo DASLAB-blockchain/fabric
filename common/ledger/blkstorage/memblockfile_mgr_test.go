@@ -1,17 +1,6 @@
-/*
-Copyright IBM Corp. 2016 All Rights Reserved.
-
-SPDX-License-Identifier: Apache-2.0
-*/
-
 package blkstorage
 
 import (
-	"fmt"
-	"io/ioutil"
-	"os"
-	"testing"
-
 	"github.com/golang/protobuf/proto"
 	"github.com/hyperledger/fabric-protos-go/common"
 	"github.com/hyperledger/fabric-protos-go/peer"
@@ -19,9 +8,10 @@ import (
 	"github.com/hyperledger/fabric/internal/pkg/txflags"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/stretchr/testify/require"
+	"testing"
 )
 
-func TestBlockfileMgrBlockReadWrite(t *testing.T) {
+func TestMemBlockfileMgrBlockReadWrite(t *testing.T) {
 	env := newTestEnv(t, NewConf(testPath(), 0))
 	defer env.Cleanup()
 	blkfileMgrWrapper := newTestBlockfileWrapper(env, "testLedger")
@@ -32,7 +22,7 @@ func TestBlockfileMgrBlockReadWrite(t *testing.T) {
 	blkfileMgrWrapper.testGetBlockByNumber(blocks)
 }
 
-func TestAddBlockWithWrongHash(t *testing.T) {
+func TestMemAddBlockWithWrongHash(t *testing.T) {
 	env := newTestEnv(t, NewConf(testPath(), 0))
 	defer env.Cleanup()
 	blkfileMgrWrapper := newTestBlockfileWrapper(env, "testLedger")
@@ -47,97 +37,17 @@ func TestAddBlockWithWrongHash(t *testing.T) {
 	t.Logf("err = %s", err)
 }
 
-func TestBlockfileMgrCrashDuringWriting(t *testing.T) {
-	testBlockfileMgrCrashDuringWriting(t, 10, 2, 1000, 10, false)
-	testBlockfileMgrCrashDuringWriting(t, 10, 2, 1000, 1, false)
-	testBlockfileMgrCrashDuringWriting(t, 10, 2, 1000, 0, false)
-	testBlockfileMgrCrashDuringWriting(t, 0, 0, 1000, 10, false)
-	testBlockfileMgrCrashDuringWriting(t, 0, 5, 1000, 10, false)
-
-	testBlockfileMgrCrashDuringWriting(t, 10, 2, 1000, 10, true)
-	testBlockfileMgrCrashDuringWriting(t, 10, 2, 1000, 1, true)
-	testBlockfileMgrCrashDuringWriting(t, 10, 2, 1000, 0, true)
-	testBlockfileMgrCrashDuringWriting(t, 0, 0, 1000, 10, true)
-	testBlockfileMgrCrashDuringWriting(t, 0, 5, 1000, 10, true)
-}
-
-func testBlockfileMgrCrashDuringWriting(t *testing.T, numBlksBeforeSavingBlkfilesInfo int,
-	numBlksAfterSavingBlkfilesInfo int, numLastBlockBytes int, numPartialBytesToWrite int,
-	deleteBFInfo bool) {
-	env := newTestEnv(t, NewConf(testPath(), 0))
-	defer env.Cleanup()
-	ledgerid := "testLedger"
-	blkfileMgrWrapper := newTestBlockfileWrapper(env, ledgerid)
-	bg, gb := testutil.NewBlockGenerator(t, ledgerid, false)
-
-	// create all necessary blocks
-	totalBlocks := numBlksBeforeSavingBlkfilesInfo + numBlksAfterSavingBlkfilesInfo
-	allBlocks := []*common.Block{gb}
-	allBlocks = append(allBlocks, bg.NextTestBlocks(totalBlocks+1)...)
-
-	// identify the blocks that are to be added beforeCP, afterCP, and after restart
-	blocksBeforeSavingBlkfilesInfo := []*common.Block{}
-	blocksAfterSavingBlkfilesInfo := []*common.Block{}
-	if numBlksBeforeSavingBlkfilesInfo != 0 {
-		blocksBeforeSavingBlkfilesInfo = allBlocks[0:numBlksBeforeSavingBlkfilesInfo]
-	}
-	if numBlksAfterSavingBlkfilesInfo != 0 {
-		blocksAfterSavingBlkfilesInfo = allBlocks[numBlksBeforeSavingBlkfilesInfo : numBlksBeforeSavingBlkfilesInfo+numBlksAfterSavingBlkfilesInfo]
-	}
-	blocksAfterRestart := allBlocks[numBlksBeforeSavingBlkfilesInfo+numBlksAfterSavingBlkfilesInfo:]
-
-	// add blocks before cp
-	blkfileMgrWrapper.addBlocks(blocksBeforeSavingBlkfilesInfo)
-	currentBlkfilesInfo := blkfileMgrWrapper.blockfileMgr.blockfilesInfo
-	blkfilesInfo1 := &blockfilesInfo{
-		latestFileNumber:   currentBlkfilesInfo.latestFileNumber,
-		latestFileSize:     currentBlkfilesInfo.latestFileSize,
-		noBlockFiles:       currentBlkfilesInfo.noBlockFiles,
-		lastPersistedBlock: currentBlkfilesInfo.lastPersistedBlock,
-	}
-
-	// add blocks after cp
-	blkfileMgrWrapper.addBlocks(blocksAfterSavingBlkfilesInfo)
-	blkfilesInfo2 := blkfileMgrWrapper.blockfileMgr.blockfilesInfo
-
-	// simulate a crash scenario
-	lastBlockBytes := []byte{}
-	encodedLen := proto.EncodeVarint(uint64(numLastBlockBytes))
-	randomBytes := testutil.ConstructRandomBytes(t, numLastBlockBytes)
-	lastBlockBytes = append(lastBlockBytes, encodedLen...)
-	lastBlockBytes = append(lastBlockBytes, randomBytes...)
-	partialBytes := lastBlockBytes[:numPartialBytesToWrite]
-	blkfileMgrWrapper.blockfileMgr.currentFileWriter.append(partialBytes, true)
-	if deleteBFInfo {
-		err := blkfileMgrWrapper.blockfileMgr.db.Delete(blkMgrInfoKey, true)
-		require.NoError(t, err)
-	} else {
-		blkfileMgrWrapper.blockfileMgr.saveBlkfilesInfo(blkfilesInfo1, true)
-	}
-	blkfileMgrWrapper.close()
-
-	// simulate a start after a crash
-	blkfileMgrWrapper = newTestBlockfileWrapper(env, ledgerid)
-	defer blkfileMgrWrapper.close()
-	blkfilesInfo3 := blkfileMgrWrapper.blockfileMgr.blockfilesInfo
-	require.Equal(t, blkfilesInfo2, blkfilesInfo3)
-
-	// add fresh blocks after restart
-	blkfileMgrWrapper.addBlocks(blocksAfterRestart)
-	testBlockfileMgrBlockIterator(t, blkfileMgrWrapper.blockfileMgr, 0, len(allBlocks)-1, allBlocks)
-}
-
-func TestBlockfileMgrBlockIterator(t *testing.T) {
+func TestMemBlockfileMgrBlockIterator(t *testing.T) {
 	env := newTestEnv(t, NewConf(testPath(), 0))
 	defer env.Cleanup()
 	blkfileMgrWrapper := newTestBlockfileWrapper(env, "testLedger")
 	defer blkfileMgrWrapper.close()
 	blocks := testutil.ConstructTestBlocks(t, 10)
 	blkfileMgrWrapper.addBlocks(blocks)
-	testBlockfileMgrBlockIterator(t, blkfileMgrWrapper.blockfileMgr, 0, 7, blocks[0:8])
+	testMemBlockfileMgrBlockIterator(t, blkfileMgrWrapper.blockfileMgr, 0, 7, blocks[0:8])
 }
 
-func testBlockfileMgrBlockIterator(t *testing.T, blockfileMgr *blockfileMgr,
+func testMemBlockfileMgrBlockIterator(t *testing.T, blockfileMgr *blockfileMgr,
 	firstBlockNum int, lastBlockNum int, expectedBlocks []*common.Block) {
 	itr, err := blockfileMgr.retrieveBlocks(uint64(firstBlockNum))
 	require.NoError(t, err, "Error while getting blocks iterator")
@@ -155,7 +65,7 @@ func testBlockfileMgrBlockIterator(t *testing.T, blockfileMgr *blockfileMgr,
 	require.Equal(t, lastBlockNum-firstBlockNum+1, numBlocksItrated)
 }
 
-func TestBlockfileMgrBlockchainInfo(t *testing.T) {
+func TestMemBlockfileMgrBlockchainInfo(t *testing.T) {
 	env := newTestEnv(t, NewConf(testPath(), 0))
 	defer env.Cleanup()
 	blkfileMgrWrapper := newTestBlockfileWrapper(env, "testLedger")
@@ -170,7 +80,7 @@ func TestBlockfileMgrBlockchainInfo(t *testing.T) {
 	require.Equal(t, uint64(10), bcInfo.Height)
 }
 
-func TestTxIDExists(t *testing.T) {
+func TestMemTxIDExists(t *testing.T) {
 	t.Run("green-path", func(t *testing.T) {
 		env := newTestEnv(t, NewConf(testPath(), 0))
 		defer env.Cleanup()
@@ -213,7 +123,7 @@ func TestTxIDExists(t *testing.T) {
 	})
 }
 
-func TestBlockfileMgrGetTxById(t *testing.T) {
+func TestMemBlockfileMgrGetTxById(t *testing.T) {
 	env := newTestEnv(t, NewConf(testPath(), 0))
 	defer env.Cleanup()
 	blkfileMgrWrapper := newTestBlockfileWrapper(env, "testLedger")
@@ -236,7 +146,7 @@ func TestBlockfileMgrGetTxById(t *testing.T) {
 
 // TestBlockfileMgrGetTxByIdDuplicateTxid tests that a transaction with an existing txid
 // (within same block or a different block) should not over-write the index by-txid (FAB-8557)
-func TestBlockfileMgrGetTxByIdDuplicateTxid(t *testing.T) {
+func TestMemBlockfileMgrGetTxByIdDuplicateTxid(t *testing.T) {
 	env := newTestEnv(t, NewConf(testPath(), 0))
 	defer env.Cleanup()
 	blkStore, err := env.provider.Open("testLedger")
@@ -354,7 +264,7 @@ func TestBlockfileMgrGetTxByIdDuplicateTxid(t *testing.T) {
 	)
 }
 
-func TestBlockfileMgrGetTxByBlockNumTranNum(t *testing.T) {
+func TestMemBlockfileMgrGetTxByBlockNumTranNum(t *testing.T) {
 	env := newTestEnv(t, NewConf(testPath(), 0))
 	defer env.Cleanup()
 	blkfileMgrWrapper := newTestBlockfileWrapper(env, "testLedger")
@@ -373,7 +283,7 @@ func TestBlockfileMgrGetTxByBlockNumTranNum(t *testing.T) {
 	}
 }
 
-func TestBlockfileMgrRestart(t *testing.T) {
+func TestMemBlockfileMgrRestart(t *testing.T) {
 	env := newTestEnv(t, NewConf(testPath(), 0))
 	defer env.Cleanup()
 	ledgerid := "testLedger"
@@ -391,7 +301,7 @@ func TestBlockfileMgrRestart(t *testing.T) {
 	require.Equal(t, expectedHeight, blkfileMgrWrapper.blockfileMgr.getBlockchainInfo().Height)
 }
 
-func TestBlockfileMgrFileRolling(t *testing.T) {
+func TestMemBlockfileMgrFileRolling(t *testing.T) {
 	blocks := testutil.ConstructTestBlocks(t, 200)
 	size := 0
 	for _, block := range blocks[:100] {
@@ -403,23 +313,24 @@ func TestBlockfileMgrFileRolling(t *testing.T) {
 	}
 
 	maxFileSie := int(0.75 * float64(size))
+	// MemBlockStore ignores this data
 	env := newTestEnv(t, NewConf(testPath(), maxFileSie))
 	defer env.Cleanup()
 	ledgerid := "testLedger"
 	blkfileMgrWrapper := newTestBlockfileWrapper(env, ledgerid)
 	blkfileMgrWrapper.addBlocks(blocks[:100])
-	require.Equal(t, 1, blkfileMgrWrapper.blockfileMgr.blockfilesInfo.latestFileNumber)
+	require.Equal(t, 100, blkfileMgrWrapper.blockfileMgr.blockfilesInfo.latestFileNumber)
 	blkfileMgrWrapper.testGetBlockByHash(blocks[:100])
 	blkfileMgrWrapper.close()
 
 	blkfileMgrWrapper = newTestBlockfileWrapper(env, ledgerid)
 	defer blkfileMgrWrapper.close()
 	blkfileMgrWrapper.addBlocks(blocks[100:])
-	require.Equal(t, 2, blkfileMgrWrapper.blockfileMgr.blockfilesInfo.latestFileNumber)
+	require.Equal(t, 200, blkfileMgrWrapper.blockfileMgr.blockfilesInfo.latestFileNumber)
 	blkfileMgrWrapper.testGetBlockByHash(blocks[100:])
 }
 
-func TestBlockfileMgrGetBlockByTxID(t *testing.T) {
+func TestMemBlockfileMgrGetBlockByTxID(t *testing.T) {
 	env := newTestEnv(t, NewConf(testPath(), 0))
 	defer env.Cleanup()
 	blkfileMgrWrapper := newTestBlockfileWrapper(env, "testLedger")
@@ -437,78 +348,4 @@ func TestBlockfileMgrGetBlockByTxID(t *testing.T) {
 			require.Equal(t, blk, blockFromFileMgr)
 		}
 	}
-}
-
-func TestBlockfileMgrSimulateCrashAtFirstBlockInFile(t *testing.T) {
-	t.Run("blockfilesInfo persisted", func(t *testing.T) {
-		testBlockfileMgrSimulateCrashAtFirstBlockInFile(t, false)
-	})
-
-	t.Run("blockfilesInfo to be computed from block files", func(t *testing.T) {
-		testBlockfileMgrSimulateCrashAtFirstBlockInFile(t, true)
-	})
-}
-
-func testBlockfileMgrSimulateCrashAtFirstBlockInFile(t *testing.T, deleteBlkfilesInfo bool) {
-	// open blockfileMgr and add 5 blocks
-	env := newTestEnv(t, NewConf(testPath(), 0))
-	defer env.Cleanup()
-
-	blkfileMgrWrapper := newTestBlockfileWrapper(env, "testLedger")
-	blockfileMgr := blkfileMgrWrapper.blockfileMgr
-	blocks := testutil.ConstructTestBlocks(t, 10)
-	for i := 0; i < 10; i++ {
-		fmt.Printf("blocks[i].Header.Number = %d\n", blocks[i].Header.Number)
-	}
-	blkfileMgrWrapper.addBlocks(blocks[:5])
-	firstFilePath := blockfileMgr.currentFileWriter.filePath
-	firstBlkFileSize := testutilGetFileSize(t, firstFilePath)
-
-	// move to next file and simulate crash scenario while writing the first block
-	blockfileMgr.moveToNextFile()
-	partialBytesForNextBlock := append(
-		proto.EncodeVarint(uint64(10000)),
-		[]byte("partialBytesForNextBlock depicting a crash during first block in file")...,
-	)
-	blockfileMgr.currentFileWriter.append(partialBytesForNextBlock, true)
-	if deleteBlkfilesInfo {
-		err := blockfileMgr.db.Delete(blkMgrInfoKey, true)
-		require.NoError(t, err)
-	}
-	blkfileMgrWrapper.close()
-
-	// verify that the block file number 1 has been created with partial bytes as a side-effect of crash
-	lastFilePath := blockfileMgr.currentFileWriter.filePath
-	lastFileContent, err := ioutil.ReadFile(lastFilePath)
-	require.NoError(t, err)
-	require.Equal(t, lastFileContent, partialBytesForNextBlock)
-
-	// simulate reopen after crash
-	blkfileMgrWrapper = newTestBlockfileWrapper(env, "testLedger")
-	defer blkfileMgrWrapper.close()
-
-	// last block file (block file number 1) should have been truncated to zero length and concluded as the next file to append to
-	require.Equal(t, 0, testutilGetFileSize(t, lastFilePath))
-	require.Equal(t,
-		&blockfilesInfo{
-			latestFileNumber:   1,
-			latestFileSize:     0,
-			lastPersistedBlock: 4,
-			noBlockFiles:       false,
-		},
-		blkfileMgrWrapper.blockfileMgr.blockfilesInfo,
-	)
-
-	// Add 5 more blocks and assert that they are added to last file (block file number 1) and full scanning across two files works as expected
-	blkfileMgrWrapper.addBlocks(blocks[5:])
-	require.True(t, testutilGetFileSize(t, lastFilePath) > 0)
-	require.Equal(t, firstBlkFileSize, testutilGetFileSize(t, firstFilePath))
-	blkfileMgrWrapper.testGetBlockByNumber(blocks)
-	testBlockfileMgrBlockIterator(t, blkfileMgrWrapper.blockfileMgr, 0, len(blocks)-1, blocks)
-}
-
-func testutilGetFileSize(t *testing.T, path string) int {
-	fi, err := os.Stat(path)
-	require.NoError(t, err)
-	return int(fi.Size())
 }
