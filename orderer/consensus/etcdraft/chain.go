@@ -691,8 +691,10 @@ func (c *Chain) run() {
 	}
 
 	for {
+		c.logger.Debug("Hao: start chain.run loop")
 		select {
 		case s := <-submitC:
+			c.logger.Debug("Hao: in submitC branch")
 			if s == nil {
 				// polled by `WaitReady`
 				continue
@@ -708,7 +710,10 @@ func (c *Chain) run() {
 				continue
 			}
 
+			c.logger.Debug("Hao:submit request for ordering")
 			batches, pending, err := c.ordered(s.req)
+			c.logger.Debug("Hao:request ordered")
+
 			if err != nil {
 				c.logger.Errorf("Failed to order message: %s", err)
 				continue
@@ -731,6 +736,7 @@ func (c *Chain) run() {
 			}
 
 		case app := <-c.applyC:
+			c.logger.Debug("Hao: in applyC branch")
 			if app.soft != nil {
 				newLeader := atomic.LoadUint64(&app.soft.Lead) // etcdraft requires atomic access
 				if newLeader != soft.Lead {
@@ -812,6 +818,7 @@ func (c *Chain) run() {
 			}
 
 		case <-timer.C():
+			c.logger.Debug("Hao: in timer branch")
 			ticking = false
 
 			batch := c.support.BlockCutter().Cut()
@@ -824,6 +831,7 @@ func (c *Chain) run() {
 			c.propose(propC, bc, batch) // we are certain this is normal block, no need to block
 
 		case sn := <-c.snapC:
+			c.logger.Debug("Hao: in snapC branch")
 			if sn.Metadata.Index != 0 {
 				if sn.Metadata.Index <= c.appliedIndex {
 					c.logger.Debugf("Skip snapshot taken at index %d, because it is behind current applied index %d", sn.Metadata.Index, c.appliedIndex)
@@ -842,6 +850,7 @@ func (c *Chain) run() {
 			}
 
 		case <-c.doneC:
+			c.logger.Debug("Hao: in doneC branch")
 			stopTimer()
 			cancelProp()
 
@@ -855,6 +864,7 @@ func (c *Chain) run() {
 			c.periodicChecker.Stop()
 			return
 		}
+		c.logger.Debug("Hao:end chain.run loop")
 	}
 }
 
@@ -888,9 +898,11 @@ func (c *Chain) writeBlock(block *common.Block, index uint64) {
 
 // Orders the envelope in the `msg` content. SubmitRequest.
 // Returns
-//   -- batches [][]*common.Envelope; the batches cut,
-//   -- pending bool; if there are envelopes pending to be ordered,
-//   -- err error; the error encountered, if any.
+//
+//	-- batches [][]*common.Envelope; the batches cut,
+//	-- pending bool; if there are envelopes pending to be ordered,
+//	-- err error; the error encountered, if any.
+//
 // It takes care of config messages as well as the revalidation of messages if the config sequence has advanced.
 func (c *Chain) ordered(msg *orderer.SubmitRequest) (batches [][]*common.Envelope, pending bool, err error) {
 	seq := c.support.Sequence()
