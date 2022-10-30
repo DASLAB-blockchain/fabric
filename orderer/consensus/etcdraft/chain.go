@@ -697,22 +697,25 @@ func (c *Chain) run() {
 			c.logger.Debug("Hao: in submitC branch")
 			if s == nil {
 				// polled by `WaitReady`
+				c.logger.Debug("Hao: out of submitC branch in s nil")
 				continue
 			}
 
 			if soft.RaftState == raft.StatePreCandidate || soft.RaftState == raft.StateCandidate {
 				s.leader <- raft.None
+				c.logger.Debug("Hao: out of submitC branch in raft Candidate")
 				continue
 			}
 
 			s.leader <- soft.Lead
 			if soft.Lead != c.raftID {
+				c.logger.Debug("Hao: out of submitC branch in raft not leader")
 				continue
 			}
 
-			c.logger.Debug("Hao:submit request for ordering")
+			c.logger.Debug("Hao: before ordered")
 			batches, pending, err := c.ordered(s.req)
-			c.logger.Debug("Hao:request ordered")
+			c.logger.Debug("Hao: after ordered")
 
 			if err != nil {
 				c.logger.Errorf("Failed to order message: %s", err)
@@ -723,8 +726,9 @@ func (c *Chain) run() {
 			} else {
 				stopTimer()
 			}
-
+			c.logger.Debug("Hao: before propose")
 			c.propose(propC, bc, batches...)
+			c.logger.Debug("Hao: after propose")
 
 			if c.configInflight {
 				c.logger.Info("Received config transaction, pause accepting transaction till it is committed")
@@ -734,7 +738,7 @@ func (c *Chain) run() {
 					c.blockInflight, c.opts.MaxInflightBlocks)
 				submitC = nil
 			}
-
+			c.logger.Debug("Hao: out of submitC branch")
 		case app := <-c.applyC:
 			c.logger.Debug("Hao: in applyC branch")
 			if app.soft != nil {
@@ -787,8 +791,9 @@ func (c *Chain) run() {
 				default:
 				}
 			}
-
+			c.logger.Debug("Hao : entering apply from applyC branch")
 			c.apply(app.entries)
+			c.logger.Debug("Hao : exit apply from applyC branch")
 
 			if c.justElected {
 				msgInflight := c.Node.lastIndex() > c.appliedIndex
@@ -816,20 +821,25 @@ func (c *Chain) run() {
 			} else if c.blockInflight < c.opts.MaxInflightBlocks {
 				submitC = c.submitC
 			}
-
+			c.logger.Debug("Hao: out of applyC branch")
 		case <-timer.C():
 			c.logger.Debug("Hao: in timer branch")
 			ticking = false
 
+			c.logger.Debug("Hao: entering BlockCutter.Cut from timer branch")
 			batch := c.support.BlockCutter().Cut()
+			c.logger.Debug("Hao: exit BlockCutter.Cut from timer branch")
+
 			if len(batch) == 0 {
 				c.logger.Warningf("Batch timer expired with no pending requests, this might indicate a bug")
 				continue
 			}
 
 			c.logger.Debugf("Batch timer expired, creating block")
+			c.logger.Debug("Hao: entering propose from timer branch")
 			c.propose(propC, bc, batch) // we are certain this is normal block, no need to block
-
+			c.logger.Debug("Hao: exit propose from timer branch")
+			c.logger.Debug("Hao: out of timer branch")
 		case sn := <-c.snapC:
 			c.logger.Debug("Hao: in snapC branch")
 			if sn.Metadata.Index != 0 {
@@ -848,7 +858,7 @@ func (c *Chain) run() {
 				c.logger.Panicf("Failed to recover from snapshot taken at Term %d and Index %d: %s",
 					sn.Metadata.Term, sn.Metadata.Index, err)
 			}
-
+			c.logger.Debug("Hao: out of snapC branch")
 		case <-c.doneC:
 			c.logger.Debug("Hao: in doneC branch")
 			stopTimer()
@@ -862,6 +872,7 @@ func (c *Chain) run() {
 
 			c.logger.Infof("Stop serving requests")
 			c.periodicChecker.Stop()
+			c.logger.Debug("Hao: output doneC branch")
 			return
 		}
 		c.logger.Debug("Hao:end chain.run loop")
@@ -913,6 +924,7 @@ func (c *Chain) ordered(msg *orderer.SubmitRequest) (batches [][]*common.Envelop
 	}
 
 	if isconfig {
+		c.logger.Debug("Hao: ordering config msg")
 		// ConfigMsg
 		if msg.LastValidationSeq < seq {
 			c.logger.Warnf("Config message was validated against %d, although current config seq has advanced (%d)", msg.LastValidationSeq, seq)
@@ -929,8 +941,10 @@ func (c *Chain) ordered(msg *orderer.SubmitRequest) (batches [][]*common.Envelop
 			batches = append(batches, batch)
 		}
 		batches = append(batches, []*common.Envelope{msg.Payload})
+		c.logger.Debug("Hao: ordering config msg done")
 		return batches, false, nil
 	}
+	c.logger.Debug("Hao: ordering normal msg")
 	// it is a normal message
 	if msg.LastValidationSeq < seq {
 		c.logger.Warnf("Normal message was validated against %d, although current config seq has advanced (%d)", msg.LastValidationSeq, seq)
@@ -939,13 +953,17 @@ func (c *Chain) ordered(msg *orderer.SubmitRequest) (batches [][]*common.Envelop
 			return nil, true, errors.Errorf("bad normal message: %s", err)
 		}
 	}
+	c.logger.Debug("Hao: entering BlockCutter.Ordered")
 	batches, pending = c.support.BlockCutter().Ordered(msg.Payload)
+	c.logger.Debug("Hao: exit BlockCutter.Ordered")
 	return batches, pending, nil
 }
 
 func (c *Chain) propose(ch chan<- *common.Block, bc *blockCreator, batches ...[]*common.Envelope) {
 	for _, batch := range batches {
+		c.logger.Debug("Hao: creating block from batch")
 		b := bc.createNextBlock(batch)
+		c.logger.Debug("Hao: created block from batch")
 		c.logger.Infof("Created block [%d], there are %d blocks in flight", b.Header.Number, c.blockInflight)
 
 		select {

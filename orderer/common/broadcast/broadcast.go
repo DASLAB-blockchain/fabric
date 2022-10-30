@@ -67,7 +67,9 @@ func (bh *Handler) Handle(srv ab.AtomicBroadcast_BroadcastServer) error {
 	addr := util.ExtractRemoteAddress(srv.Context())
 	logger.Debugf("Starting new broadcast loop for %s", addr)
 	for {
+		logger.Debug("Hao: receiving message")
 		msg, err := srv.Recv()
+		logger.Debug("Hao: received message")
 		if err == io.EOF {
 			logger.Debugf("Received EOF from %s, hangup", addr)
 			return nil
@@ -76,9 +78,11 @@ func (bh *Handler) Handle(srv ab.AtomicBroadcast_BroadcastServer) error {
 			logger.Warningf("Error reading from %s: %s", addr, err)
 			return err
 		}
-
+		logger.Debug("Hao: Processing message")
 		resp := bh.ProcessMessage(msg, addr)
+		logger.Debug("Hao: Processed message and prepare to send")
 		err = srv.Send(resp)
+		logger.Debug("Hao: Sent message response")
 		if resp.Status != cb.Status_SUCCESS {
 			return err
 		}
