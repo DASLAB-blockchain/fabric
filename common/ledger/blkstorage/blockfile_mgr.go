@@ -12,6 +12,7 @@ import (
 	"math"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/golang/protobuf/proto"
@@ -305,6 +306,7 @@ func (mgr *blockfileMgr) addBlock(block *common.Block) error {
 	blockBytesEncodedLen := proto.EncodeVarint(uint64(blockBytesLen))
 	totalBytesToAppend := blockBytesLen + len(blockBytesEncodedLen)
 
+	startAppendFile := time.Now()
 	//Determine if we need to start a new file since the size of this block
 	//exceeds the amount of space left in the current file
 	if currentOffset+totalBytesToAppend > mgr.conf.maxBlockfileSize {
@@ -324,6 +326,11 @@ func (mgr *blockfileMgr) addBlock(block *common.Block) error {
 		}
 		return errors.WithMessage(err, "error appending block to file")
 	}
+	elapsedAppendFile := time.Since(startAppendFile)
+	fmt.Printf("[addBlock()] Block %d elapsedAppendFile (%d bytes) time: %v\n",
+               block.Header.Number,
+			   len(blockBytes),
+               elapsedAppendFile)
 
 	//Update the blockfilesInfo with the results of adding the new block
 	currentBlkfilesInfo := mgr.blockfilesInfo
@@ -332,6 +339,8 @@ func (mgr *blockfileMgr) addBlock(block *common.Block) error {
 		latestFileSize:     currentBlkfilesInfo.latestFileSize + totalBytesToAppend,
 		noBlockFiles:       false,
 		lastPersistedBlock: block.Header.Number}
+	
+	startSaveBlkInfo := time.Now()
 	//save the blockfilesInfo in the database
 	if err = mgr.saveBlkfilesInfo(newBlkfilesInfo, false); err != nil {
 		truncateErr := mgr.currentFileWriter.truncateFile(currentBlkfilesInfo.latestFileSize)
@@ -340,6 +349,10 @@ func (mgr *blockfileMgr) addBlock(block *common.Block) error {
 		}
 		return errors.WithMessage(err, "error saving blockfiles file info to db")
 	}
+	elapsedSaveBlkInfo := time.Since(startSaveBlkInfo)
+	fmt.Printf("[addBlock()] Block %d elapsedSaveBlkInfo time: %v\n",
+               block.Header.Number,
+               elapsedSaveBlkInfo)
 
 	//Index block file location pointer updated with file suffex and offset for the new block
 	blockFLP := &fileLocPointer{fileSuffixNum: newBlkfilesInfo.latestFileNumber}
@@ -348,16 +361,32 @@ func (mgr *blockfileMgr) addBlock(block *common.Block) error {
 	for _, txOffset := range txOffsets {
 		txOffset.loc.offset += len(blockBytesEncodedLen)
 	}
+	startSaveIndex := time.Now()
 	//save the index in the database
 	if err = mgr.index.indexBlock(&blockIdxInfo{
 		blockNum: block.Header.Number, blockHash: blockHash,
 		flp: blockFLP, txOffsets: txOffsets, metadata: block.Metadata}); err != nil {
 		return err
 	}
+	elapsedSaveIndex := time.Since(startSaveIndex)
+	fmt.Printf("[addBlock()] Block %d elapsedSaveIndex time: %v\n",
+               block.Header.Number,
+               elapsedSaveIndex)
 
+	startUpdateBFInfo := time.Now()
 	//update the blockfilesInfo (for storage) and the blockchain info (for APIs) in the manager
 	mgr.updateBlockfilesInfo(newBlkfilesInfo)
+	elapsedUpdateBFInfo := time.Since(startUpdateBFInfo)
+	fmt.Printf("[addBlock()] Block %d elapsedUpdateBFInfo time: %v\n",
+               block.Header.Number,
+               elapsedUpdateBFInfo)
+
+	startUpdateBCInfo := time.Now()
 	mgr.updateBlockchainInfo(blockHash, block)
+	elapsedUpdateBCInfo := time.Since(startUpdateBCInfo)
+	fmt.Printf("[addBlock()] Block %d elapsedUpdateBCInfo time: %v\n",
+               block.Header.Number,
+               elapsedUpdateBCInfo)
 	return nil
 }
 

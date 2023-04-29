@@ -12,6 +12,7 @@ import (
 	"math"
 	"strconv"
 	"time"
+	"fmt"
 
 	"github.com/golang/protobuf/proto"
 	cb "github.com/hyperledger/fabric-protos-go/common"
@@ -328,11 +329,16 @@ func (h *Handler) deliverBlocks(ctx context.Context, srv *Server, envelope *cb.E
 
 		logger.Debugf("[channel: %s] Delivering block [%d] for (%p) for %s", chdr.ChannelId, block.Header.Number, seekInfo, addr)
 
+		startSendBlockRsp := time.Now()
 		signedData := &protoutil.SignedData{Data: envelope.Payload, Identity: shdr.Creator, Signature: envelope.Signature}
 		if err := srv.SendBlockResponse(block, chdr.ChannelId, chain, signedData); err != nil {
 			logger.Warningf("[channel: %s] Error sending to %s: %s", chdr.ChannelId, addr, err)
 			return cb.Status_INTERNAL_SERVER_ERROR, err
 		}
+		elapsedSendBlockRsp := time.Since(startSendBlockRsp)
+		fmt.Printf("[deliverBlocks()] Block %d elapsedSendBlockRsp time: %v\n",
+               block.Header.Number,
+			   elapsedSendBlockRsp)
 
 		h.Metrics.BlocksSent.With(labels...).Add(1)
 

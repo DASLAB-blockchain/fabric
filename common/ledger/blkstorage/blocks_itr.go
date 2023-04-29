@@ -8,7 +8,8 @@ package blkstorage
 
 import (
 	"sync"
-
+	"time"
+	"fmt"
 	"github.com/hyperledger/fabric/common/ledger"
 )
 
@@ -63,6 +64,8 @@ func (itr *blocksItr) Next() (ledger.QueryResult, error) {
 	if itr.maxBlockNumAvailable < itr.blockNumToRetrieve {
 		itr.maxBlockNumAvailable = itr.waitForBlock(itr.blockNumToRetrieve)
 	}
+	fmt.Printf("[Next ()] block iterator is waken from sleep to send Block %d\n", 
+				itr.blockNumToRetrieve)
 	itr.closeMarkerLock.Lock()
 	defer itr.closeMarkerLock.Unlock()
 	if itr.closeMarker {
@@ -74,10 +77,15 @@ func (itr *blocksItr) Next() (ledger.QueryResult, error) {
 			return nil, err
 		}
 	}
+	startReadBlock := time.Now()
 	nextBlockBytes, err := itr.stream.nextBlockBytes()
 	if err != nil {
 		return nil, err
 	}
+	elapsedReadBlock := time.Since(startReadBlock)
+	fmt.Printf("[Next ()] Block %d elapsedReadTime %v\n", 
+				itr.blockNumToRetrieve,
+				elapsedReadBlock)
 	itr.blockNumToRetrieve++
 	return deserializeBlock(nextBlockBytes)
 }

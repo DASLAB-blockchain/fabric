@@ -355,6 +355,7 @@ func (l *kvLedger) recommitLostBlocks(firstBlockNum uint64, lastBlockNum uint64,
 func (l *kvLedger) GetTransactionByID(txID string) (*peer.ProcessedTransaction, error) {
 	l.blockAPIsRWLock.RLock()
 	defer l.blockAPIsRWLock.RUnlock()
+	startHoldLock := time.Now()	
 	tranEnv, err := l.blockStore.RetrieveTxByID(txID)
 	if err != nil {
 		return nil, err
@@ -364,14 +365,22 @@ func (l *kvLedger) GetTransactionByID(txID string) (*peer.ProcessedTransaction, 
 		return nil, err
 	}
 	processedTran := &peer.ProcessedTransaction{TransactionEnvelope: tranEnv, ValidationCode: int32(txVResult)}
+	elapsedHoldLock := time.Since(startHoldLock)
+	fmt.Printf("[GetTransactionByID()] holds lock for %v\n", elapsedHoldLock)
 	return processedTran, nil
 }
 
 // GetBlockchainInfo returns basic info about blockchain
 func (l *kvLedger) GetBlockchainInfo() (*common.BlockchainInfo, error) {
-	l.blockAPIsRWLock.RLock()
+	startWaitLock := time.Now()
 	defer l.blockAPIsRWLock.RUnlock()
+	l.blockAPIsRWLock.RLock()
+	startHoldLock := time.Now()	
+	elapsedWaitLock := time.Since(startWaitLock)
+	fmt.Printf("[GetBlockchainInfo()] wait for lock costs %v\n", elapsedWaitLock)
 	bcInfo, err := l.blockStore.GetBlockchainInfo()
+	elapsedHoldLock := time.Since(startHoldLock)
+	fmt.Printf("[GetBlockChainInfo()] holds lock for %v\n", elapsedHoldLock)
 	return bcInfo, err
 }
 
@@ -380,7 +389,10 @@ func (l *kvLedger) GetBlockchainInfo() (*common.BlockchainInfo, error) {
 func (l *kvLedger) GetBlockByNumber(blockNumber uint64) (*common.Block, error) {
 	l.blockAPIsRWLock.RLock()
 	defer l.blockAPIsRWLock.RUnlock()
+	startHoldLock := time.Now()	
 	block, err := l.blockStore.RetrieveBlockByNumber(blockNumber)
+	elapsedHoldLock := time.Since(startHoldLock)
+	fmt.Printf("[GetBlockByNumber()] holds lock for %v\n", elapsedHoldLock)
 	return block, err
 }
 
@@ -407,14 +419,20 @@ func (l *kvLedger) GetBlockByHash(blockHash []byte) (*common.Block, error) {
 func (l *kvLedger) GetBlockByTxID(txID string) (*common.Block, error) {
 	l.blockAPIsRWLock.RLock()
 	defer l.blockAPIsRWLock.RUnlock()
+	startHoldLock := time.Now()	
 	block, err := l.blockStore.RetrieveBlockByTxID(txID)
+	elapsedHoldLock := time.Since(startHoldLock)
+	fmt.Printf("[GetBlockByTxID()] holds lock for %v\n", elapsedHoldLock)
 	return block, err
 }
 
 func (l *kvLedger) GetTxValidationCodeByTxID(txID string) (peer.TxValidationCode, error) {
 	l.blockAPIsRWLock.RLock()
 	defer l.blockAPIsRWLock.RUnlock()
+	startHoldLock := time.Now()	
 	txValidationCode, err := l.blockStore.RetrieveTxValidationCodeByTxID(txID)
+	elapsedHoldLock := time.Since(startHoldLock)
+	fmt.Printf("[GetTxValidationCodeByTxID()] holds lock for %v\n", elapsedHoldLock)
 	return txValidationCode, err
 }
 
@@ -499,6 +517,7 @@ func (l *kvLedger) CommitLegacy(pvtdataAndBlock *ledger.BlockAndPvtData, commitO
 	}
 	elapsedCommitState := time.Since(startCommitState)
 
+	startHistoryDB := time.Now()
 	// History database could be written in parallel with state and/or async as a future optimization,
 	// although it has not been a bottleneck...no need to clutter the log with elapsed duration.
 	if l.historyDB != nil {
@@ -507,14 +526,16 @@ func (l *kvLedger) CommitLegacy(pvtdataAndBlock *ledger.BlockAndPvtData, commitO
 			panic(errors.WithMessage(err, "Error during commit to history db"))
 		}
 	}
+	elapsedHistoryDB := time.Since(startHistoryDB)
 
-	logger.Infof("[%s] Committed block [%d] with %d transaction(s) in %dms (state_validation=%dms block_and_pvtdata_commit=%dms state_commit=%dms)"+
+	logger.Infof("[%s] Committed block [%d] with %d transaction(s) in %dms (state_validation=%dms block_and_pvtdata_commit=%dms state_commit=%dms history_db=%dms)"+
 		" commitHash=[%x]",
 		l.ledgerID, block.Header.Number, len(block.Data.Data),
 		time.Since(startBlockProcessing)/time.Millisecond,
 		elapsedBlockProcessing/time.Millisecond,
 		elapsedBlockstorageAndPvtdataCommit/time.Millisecond,
 		elapsedCommitState/time.Millisecond,
+		elapsedHistoryDB/time.Millisecond,
 		l.commitHash,
 	)
 	l.updateBlockStats(
@@ -533,6 +554,7 @@ func (l *kvLedger) commitToPvtAndBlockStore(blockAndPvtdata *ledger.BlockAndPvtD
 	}
 	blockNum := blockAndPvtdata.Block.Header.Number
 
+	startPvtDataStore := time.Now()
 	if !l.isPvtstoreAheadOfBlkstore.Load().(bool) {
 		logger.Debugf("Writing block [%d] to pvt data store", blockNum)
 		// If a state fork occurs during a regular block commit,
@@ -551,11 +573,20 @@ func (l *kvLedger) commitToPvtAndBlockStore(blockAndPvtdata *ledger.BlockAndPvtD
 	} else {
 		logger.Debugf("Skipping writing pvtData to pvt block store as it ahead of the block store")
 	}
+	elapsedPvtDataStore := time.Since(startPvtDataStore)
+	logger.Infof("[commitToPvtAndBlockStore()]Writing block [%d] to pvt data store costs %d ms",
+	 			 blockNum,
+				elapsedPvtDataStore / time.Millisecond)
 
+	startAddBlock := time.Now()
 	if err := l.blockStore.AddBlock(blockAndPvtdata.Block); err != nil {
 		return err
 	}
-
+	elapsedAddBlock := time.Since(startAddBlock)
+	logger.Infof("[commitToPvtAndBlockStore()]Writing block [%d] to block storage costs %d ms",
+	 			 blockNum,
+				 elapsedAddBlock / time.Millisecond)
+	
 	if pvtdataStoreHt == blockNum+1 {
 		// Only when the pvtdataStore was ahead of blockStore
 		// during the ledger initialization time, we reach here.
@@ -623,6 +654,7 @@ func (l *kvLedger) GetPvtDataAndBlockByNum(blockNum uint64, filter ledger.PvtNsC
 	l.blockAPIsRWLock.RLock()
 	defer l.blockAPIsRWLock.RUnlock()
 
+	startHoldLock := time.Now()	
 	var block *common.Block
 	var pvtdata []*ledger.TxPvtData
 	var err error
@@ -634,7 +666,8 @@ func (l *kvLedger) GetPvtDataAndBlockByNum(blockNum uint64, filter ledger.PvtNsC
 	if pvtdata, err = l.pvtdataStore.GetPvtDataByBlockNum(blockNum, filter); err != nil {
 		return nil, err
 	}
-
+	elapsedHoldLock := time.Since(startHoldLock)
+	fmt.Printf("[GetPvtDataAndBlockByNum()] holds lock for %v\n", elapsedHoldLock)
 	return &ledger.BlockAndPvtData{Block: block, PvtData: constructPvtdataMap(pvtdata)}, nil
 }
 
@@ -643,11 +676,14 @@ func (l *kvLedger) GetPvtDataAndBlockByNum(blockNum uint64, filter ledger.PvtNsC
 func (l *kvLedger) GetPvtDataByNum(blockNum uint64, filter ledger.PvtNsCollFilter) ([]*ledger.TxPvtData, error) {
 	l.blockAPIsRWLock.RLock()
 	defer l.blockAPIsRWLock.RUnlock()
+	startHoldLock := time.Now()	
 	var pvtdata []*ledger.TxPvtData
 	var err error
 	if pvtdata, err = l.pvtdataStore.GetPvtDataByBlockNum(blockNum, filter); err != nil {
 		return nil, err
 	}
+	elapsedHoldLock := time.Since(startHoldLock)
+	fmt.Printf("[GetPvtDataByNum()] holds lock for %v\n", elapsedHoldLock)
 	return pvtdata, nil
 }
 

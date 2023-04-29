@@ -9,6 +9,7 @@ package blocksprovider
 import (
 	"context"
 	"crypto/x509"
+	"fmt"
 	"math"
 	"time"
 
@@ -173,7 +174,10 @@ func (d *Deliverer) DeliverBlocks() {
 		recv := make(chan *orderer.DeliverResponse)
 		go func() {
 			for {
+				startRecvBlock := time.Now()
 				resp, err := deliverClient.Recv()
+				elapsedRecvBlock := time.Since(startRecvBlock)
+				fmt.Printf("[DeliverBlocks()] Peer Receive blocks time %v\n", elapsedRecvBlock)
 				if err != nil {
 					connLogger.Warningf("Encountered an error reading from deliver stream: %s", err)
 					close(recv)
@@ -227,10 +231,14 @@ func (d *Deliverer) processMsg(msg *orderer.DeliverResponse) error {
 
 		return errors.Errorf("received bad status %v from orderer", t.Status)
 	case *orderer.DeliverResponse_Block:
+		startProcessBlk := time.Now()
 		blockNum := t.Block.Header.Number
+		startVerifyBlock := time.Now()
 		if err := d.BlockVerifier.VerifyBlock(gossipcommon.ChannelID(d.ChannelID), blockNum, t.Block); err != nil {
 			return errors.WithMessage(err, "block from orderer could not be verified")
 		}
+		elapsedVerifyBlock := time.Since(startVerifyBlock)
+		fmt.Printf("[processMsg()] peer verfies block %d costs time %v\n", blockNum, elapsedVerifyBlock)
 
 		marshaledBlock, err := proto.Marshal(t.Block)
 		if err != nil {
@@ -255,18 +263,27 @@ func (d *Deliverer) processMsg(msg *orderer.DeliverResponse) error {
 			},
 		}
 
+		startAddPayload := time.Now()
 		d.Logger.Debugf("Adding payload to local buffer, blockNum = [%d]", blockNum)
 		// Add payload to local state payloads buffer
 		if err := d.Gossip.AddPayload(d.ChannelID, payload); err != nil {
 			d.Logger.Warningf("Block [%d] received from ordering service wasn't added to payload buffer: %v", blockNum, err)
 			return errors.WithMessage(err, "could not add block as payload")
 		}
+		elapsedAddPayload:= time.Since(startAddPayload)
+		fmt.Printf("[processMsg()] peer adds payload block %d costs time %v\n", blockNum, elapsedAddPayload)
 		if d.BlockGossipDisabled {
 			return nil
 		}
+		startGossip := time.Now()
 		// Gossip messages with other nodes
 		d.Logger.Debugf("Gossiping block [%d]", blockNum)
 		d.Gossip.Gossip(gossipMsg)
+		elapsedGossip := time.Since(startGossip)
+		fmt.Printf("[processMsg()] peer gossip block %d costs time %v\n", blockNum, elapsedGossip)
+
+		elapsedProcessBlk := time.Since(startProcessBlk)
+		fmt.Printf("[processMsg()] peer process block %d costs time %v\n", blockNum, elapsedProcessBlk)
 		return nil
 	default:
 		d.Logger.Warningf("Received unknown: %v", t)
