@@ -328,16 +328,22 @@ func (h *Handler) deliverBlocks(ctx context.Context, srv *Server, envelope *cb.E
 
 		logger.Debugf("[channel: %s] Delivering block [%d] for (%p) for %s", chdr.ChannelId, block.Header.Number, seekInfo, addr)
 
-		startSendBlockRsp := time.Now()
 		signedData := &protoutil.SignedData{Data: envelope.Payload, Identity: shdr.Creator, Signature: envelope.Signature}
+
+		blockSize := 0
+		for i := 0; i < len(block.Data.Data); i += 1 {
+			blockSize += len(block.Data.Data[i])
+		}
+		logger.Infof("Orderer sends block %d (%d txns, %v bytes) at %v us\n", 
+					  block.Header.Number, 
+					  len(block.Data.Data),
+					  blockSize, 
+					  time.Now().UnixMicro())
+
 		if err := srv.SendBlockResponse(block, chdr.ChannelId, chain, signedData); err != nil {
 			logger.Warningf("[channel: %s] Error sending to %s: %s", chdr.ChannelId, addr, err)
 			return cb.Status_INTERNAL_SERVER_ERROR, err
 		}
-		elapsedSendBlockRsp := time.Since(startSendBlockRsp)
-		logger.Infof("elaspedSendBlockRsp block %d time: %v\n",
-               block.Header.Number,
-			   elapsedSendBlockRsp)
 
 		h.Metrics.BlocksSent.With(labels...).Add(1)
 

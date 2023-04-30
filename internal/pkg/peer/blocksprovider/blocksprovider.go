@@ -173,10 +173,7 @@ func (d *Deliverer) DeliverBlocks() {
 		recv := make(chan *orderer.DeliverResponse)
 		go func() {
 			for {
-				startRecvBlock := time.Now()
 				resp, err := deliverClient.Recv()
-				elapsedRecvBlock := time.Since(startRecvBlock)
-				connLogger.Debugf("peer receives blocks cost time %v\n", elapsedRecvBlock)
 				if err != nil {
 					connLogger.Warningf("Encountered an error reading from deliver stream: %s", err)
 					close(recv)
@@ -230,8 +227,18 @@ func (d *Deliverer) processMsg(msg *orderer.DeliverResponse) error {
 
 		return errors.Errorf("received bad status %v from orderer", t.Status)
 	case *orderer.DeliverResponse_Block:
-		startProcessBlk := time.Now()
 		blockNum := t.Block.Header.Number
+		blockSize := 0
+		for i := 0; i < len(t.Block.Data.Data); i += 1 {
+			blockSize += len(t.Block.Data.Data[i])
+		}
+		d.Logger.Infof("peer receives block %d (%d txns, %d bytes) at %v us\n", 
+						blockNum, 
+						len(t.Block.Data.Data), 
+						blockSize, 
+						time.Now().UnixMicro())
+
+		startProcessBlk := time.Now()
 		startVerifyBlock := time.Now()
 		if err := d.BlockVerifier.VerifyBlock(gossipcommon.ChannelID(d.ChannelID), blockNum, t.Block); err != nil {
 			return errors.WithMessage(err, "block from orderer could not be verified")

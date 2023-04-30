@@ -24,7 +24,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-var SAVE_INDEX_SYNC = false
+var SAVE_INDEX_SYNC = true
 
 const (
 	blockfilePrefix                   = "blockfile_"
