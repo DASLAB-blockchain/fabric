@@ -8,7 +8,6 @@ package blkstorage
 
 import (
 	"time"
-	"fmt"
 	"github.com/hyperledger/fabric-protos-go/common"
 	"github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric/common/ledger"
@@ -46,7 +45,7 @@ func (store *BlockStore) AddBlock(block *common.Block) error {
 	startBlockCommit := time.Now()
 	result := store.fileMgr.addBlock(block)
 	elapsedBlockCommit := time.Since(startBlockCommit)
-	fmt.Printf("[AddBlock()] Block %d elapsedBlockCommit time: %v\n",
+	logger.Infof("block %d elapsedBlockCommit time: %v\n",
                block.Header.Number,
                elapsedBlockCommit)
 

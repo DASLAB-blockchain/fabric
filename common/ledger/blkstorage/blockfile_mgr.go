@@ -329,7 +329,7 @@ func (mgr *blockfileMgr) addBlock(block *common.Block) error {
 		return errors.WithMessage(err, "error appending block to file")
 	}
 	elapsedAppendFile := time.Since(startAppendFile)
-	fmt.Printf("[addBlock()] Block %d elapsedAppendFile (%d bytes) time: %v\n",
+	logger.Infof("block %d elapsedAppendFile (%d bytes) time: %v\n",
                block.Header.Number,
 			   len(blockBytes),
                elapsedAppendFile)
@@ -352,7 +352,7 @@ func (mgr *blockfileMgr) addBlock(block *common.Block) error {
 		return errors.WithMessage(err, "error saving blockfiles file info to db")
 	}
 	elapsedSaveBlkInfo := time.Since(startSaveBlkInfo)
-	fmt.Printf("[addBlock()] Block %d elapsedSaveBlkInfo time: %v\n",
+	logger.Infof("block %d elapsedSaveBlkInfo time: %v\n",
                block.Header.Number,
                elapsedSaveBlkInfo)
 
@@ -381,7 +381,7 @@ func (mgr *blockfileMgr) addBlock(block *common.Block) error {
 	}
 
 	elapsedSaveIndex := time.Since(startSaveIndex)
-	fmt.Printf("[addBlock()] Block %d elapsedSaveIndex time: %v\n",
+	logger.Infof("block %d elapsedSaveIndex time: %v\n",
                block.Header.Number,
                elapsedSaveIndex)
 
@@ -389,14 +389,14 @@ func (mgr *blockfileMgr) addBlock(block *common.Block) error {
 	//update the blockfilesInfo (for storage) and the blockchain info (for APIs) in the manager
 	mgr.updateBlockfilesInfo(newBlkfilesInfo)
 	elapsedUpdateBFInfo := time.Since(startUpdateBFInfo)
-	fmt.Printf("[addBlock()] Block %d elapsedUpdateBFInfo time: %v\n",
+	logger.Infof("block %d elapsedUpdateBFInfo time: %v\n",
                block.Header.Number,
                elapsedUpdateBFInfo)
 
 	startUpdateBCInfo := time.Now()
 	mgr.updateBlockchainInfo(blockHash, block)
 	elapsedUpdateBCInfo := time.Since(startUpdateBCInfo)
-	fmt.Printf("[addBlock()] Block %d elapsedUpdateBCInfo time: %v\n",
+	logger.Infof("block %d elapsedUpdateBCInfo time: %v\n",
                block.Header.Number,
                elapsedUpdateBCInfo)
 	return nil

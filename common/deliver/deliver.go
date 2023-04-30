@@ -12,7 +12,6 @@ import (
 	"math"
 	"strconv"
 	"time"
-	"fmt"
 
 	"github.com/golang/protobuf/proto"
 	cb "github.com/hyperledger/fabric-protos-go/common"
@@ -336,7 +335,7 @@ func (h *Handler) deliverBlocks(ctx context.Context, srv *Server, envelope *cb.E
 			return cb.Status_INTERNAL_SERVER_ERROR, err
 		}
 		elapsedSendBlockRsp := time.Since(startSendBlockRsp)
-		fmt.Printf("[deliverBlocks()] Block %d elapsedSendBlockRsp time: %v\n",
+		logger.Infof("elaspedSendBlockRsp block %d time: %v\n",
                block.Header.Number,
 			   elapsedSendBlockRsp)
 
