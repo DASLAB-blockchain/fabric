@@ -8,7 +8,6 @@ package state
 
 import (
 	"bytes"
-	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -758,18 +757,14 @@ func (s *GossipStateProviderImpl) AddPayload(payload *proto.Payload) error {
 // the block is sent into the payloads buffer.
 // Else - it may drop the block, if the payload buffer is too full.
 func (s *GossipStateProviderImpl) addPayload(payload *proto.Payload, blockingMode bool) error {
-	startAddPayload := time.Now()
 	if payload == nil {
 		return errors.New("Given payload is nil")
 	}
 	s.logger.Debugf("[%s] Adding payload to local buffer, blockNum = [%d]", s.chainID, payload.SeqNum)
-	startLedgerHeight := time.Now()
 	height, err := s.ledger.LedgerHeight()
 	if err != nil {
 		return errors.Wrap(err, "Failed obtaining ledger height")
 	}
-	elapsedLedgerHeight := time.Since(startLedgerHeight)
-	fmt.Printf("[addPayload()] elapsed ledgerHeight time: %v\n", elapsedLedgerHeight)
 
 	if !blockingMode && payload.SeqNum-height >= uint64(s.config.StateBlockBufferSize) {
 		if s.straggler(height, payload) {
@@ -782,20 +777,12 @@ func (s *GossipStateProviderImpl) addPayload(payload *proto.Payload, blockingMod
 		return errors.Errorf("Ledger height is at %d, cannot enqueue block with sequence of %d", height, payload.SeqNum)
 	}
 
-	startWait := time.Now()
 	for blockingMode && s.payloads.Size() > s.config.StateBlockBufferSize*2 {
 		time.Sleep(enqueueRetryInterval)
 	}
-	elapsedWait := time.Since(startWait)
-	fmt.Printf("[addPayload()] elapsed wait time: %v\n", elapsedWait)
 
-	startPush := time.Now()
 	s.payloads.Push(payload)
-	elapsedPush := time.Since(startPush)
-	fmt.Printf("[addPayload()] elapsed push time: %v\n", elapsedPush)
 	s.logger.Debugf("Blocks payloads buffer size for channel [%s] is %d blocks", s.chainID, s.payloads.Size())
-	elapsedAddPayload := time.Since(startAddPayload)
-	fmt.Printf("[addPayload()] elapsed addPayload time: %v\n", elapsedAddPayload)
 	return nil
 }
 

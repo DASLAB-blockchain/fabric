@@ -275,6 +275,12 @@ docker-clean: $(RELEASE_IMAGES:%=%-docker-clean)
 	-@for image in "$$(docker images --quiet --filter=reference='$(DOCKER_NS)/fabric-$*:$(DOCKER_TAG)')"; do \
 		[ -z "$$image" ] || docker rmi -f $$image; \
 	done
+	-@for image in "$$(docker images --quiet --filter=reference='$(DOCKER_NS)/fabric-$*:$(BASE_VERSION)')"; do \
+		[ -z "$$image" ] || docker rmi -f $$image; \
+	done
+	-@for image in "$$(docker images --quiet --filter=reference='$(DOCKER_NS)/fabric-$*:$(TWO_DIGIT_VERSION)')"; do \
+		[ -z "$$image" ] || docker rmi -f $$image; \
+	done
 	-@rm -rf $(BUILD_DIR)/images/$* || true
 
 .PHONY: docker-tag-latest

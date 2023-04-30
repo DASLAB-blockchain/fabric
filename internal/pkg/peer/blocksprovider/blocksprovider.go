@@ -9,7 +9,6 @@ package blocksprovider
 import (
 	"context"
 	"crypto/x509"
-	"fmt"
 	"math"
 	"time"
 
@@ -177,7 +176,7 @@ func (d *Deliverer) DeliverBlocks() {
 				startRecvBlock := time.Now()
 				resp, err := deliverClient.Recv()
 				elapsedRecvBlock := time.Since(startRecvBlock)
-				fmt.Printf("[DeliverBlocks()] Peer Receive blocks time %v\n", elapsedRecvBlock)
+				connLogger.Debugf("peer receives blocks cost time %v\n", elapsedRecvBlock)
 				if err != nil {
 					connLogger.Warningf("Encountered an error reading from deliver stream: %s", err)
 					close(recv)
@@ -238,7 +237,7 @@ func (d *Deliverer) processMsg(msg *orderer.DeliverResponse) error {
 			return errors.WithMessage(err, "block from orderer could not be verified")
 		}
 		elapsedVerifyBlock := time.Since(startVerifyBlock)
-		fmt.Printf("[processMsg()] peer verfies block %d costs time %v\n", blockNum, elapsedVerifyBlock)
+		d.Logger.Debugf("peer verfies block %d costs time %v\n", blockNum, elapsedVerifyBlock)
 
 		marshaledBlock, err := proto.Marshal(t.Block)
 		if err != nil {
@@ -271,7 +270,7 @@ func (d *Deliverer) processMsg(msg *orderer.DeliverResponse) error {
 			return errors.WithMessage(err, "could not add block as payload")
 		}
 		elapsedAddPayload:= time.Since(startAddPayload)
-		fmt.Printf("[processMsg()] peer adds payload block %d costs time %v\n", blockNum, elapsedAddPayload)
+		d.Logger.Debugf("Peer adds payload block %d costs time %v\n", blockNum, elapsedAddPayload)
 		if d.BlockGossipDisabled {
 			return nil
 		}
@@ -280,10 +279,10 @@ func (d *Deliverer) processMsg(msg *orderer.DeliverResponse) error {
 		d.Logger.Debugf("Gossiping block [%d]", blockNum)
 		d.Gossip.Gossip(gossipMsg)
 		elapsedGossip := time.Since(startGossip)
-		fmt.Printf("[processMsg()] peer gossip block %d costs time %v\n", blockNum, elapsedGossip)
+		d.Logger.Debugf("peer gossip block %d costs time %v\n", blockNum, elapsedGossip)
 
 		elapsedProcessBlk := time.Since(startProcessBlk)
-		fmt.Printf("[processMsg()] peer process block %d costs time %v\n", blockNum, elapsedProcessBlk)
+		d.Logger.Debugf("[processMsg()] peer process block %d costs time %v\n", blockNum, elapsedProcessBlk)
 		return nil
 	default:
 		d.Logger.Warningf("Received unknown: %v", t)

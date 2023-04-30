@@ -24,6 +24,8 @@ import (
 	"github.com/pkg/errors"
 )
 
+var SAVE_INDEX_SYNC = false
+
 const (
 	blockfilePrefix                   = "blockfile_"
 	bootstrappingSnapshotInfoFile     = "bootstrappingSnapshot.info"
@@ -362,12 +364,22 @@ func (mgr *blockfileMgr) addBlock(block *common.Block) error {
 		txOffset.loc.offset += len(blockBytesEncodedLen)
 	}
 	startSaveIndex := time.Now()
-	//save the index in the database
-	if err = mgr.index.indexBlock(&blockIdxInfo{
-		blockNum: block.Header.Number, blockHash: blockHash,
-		flp: blockFLP, txOffsets: txOffsets, metadata: block.Metadata}); err != nil {
-		return err
+	if SAVE_INDEX_SYNC {
+		//save the index in the database
+		if err = mgr.index.indexBlock(&blockIdxInfo{
+			blockNum: block.Header.Number, blockHash: blockHash,
+			flp: blockFLP, txOffsets: txOffsets, metadata: block.Metadata}); err != nil {
+			return err
+		}
+	} else {
+		// Use another goroutine to remove it from critical path
+		go func() {
+			mgr.index.indexBlock(&blockIdxInfo{
+			blockNum: block.Header.Number, blockHash: blockHash,
+			flp: blockFLP, txOffsets: txOffsets, metadata: block.Metadata});
+		}()
 	}
+
 	elapsedSaveIndex := time.Since(startSaveIndex)
 	fmt.Printf("[addBlock()] Block %d elapsedSaveIndex time: %v\n",
                block.Header.Number,
