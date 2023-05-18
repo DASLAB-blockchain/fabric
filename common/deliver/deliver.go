@@ -334,7 +334,7 @@ func (h *Handler) deliverBlocks(ctx context.Context, srv *Server, envelope *cb.E
 		for i := 0; i < len(block.Data.Data); i += 1 {
 			blockSize += len(block.Data.Data[i])
 		}
-		logger.Infof("Orderer sends block %d (%d txns, %v bytes) at %v us\n", 
+		logger.Warnf("Orderer sends block %d (%d txns, %v bytes) at %v us\n", 
 					  block.Header.Number, 
 					  len(block.Data.Data),
 					  blockSize, 

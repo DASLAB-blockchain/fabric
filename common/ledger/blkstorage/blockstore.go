@@ -45,7 +45,7 @@ func (store *BlockStore) AddBlock(block *common.Block) error {
 	startBlockCommit := time.Now()
 	result := store.fileMgr.addBlock(block)
 	elapsedBlockCommit := time.Since(startBlockCommit)
-	logger.Infof("block %d elapsedBlockCommit time: %v\n",
+	logger.Warnf("block %d elapsedBlockCommit time: %v\n",
                block.Header.Number,
                elapsedBlockCommit)
 

@@ -807,6 +807,8 @@ func (s *GossipStateProviderImpl) commitBlock(block *common.Block, pvtData util.
 	}
 
 	sinceT1 := time.Since(t1)
+	s.logger.Warningf("[%s] Committed block [%d] with commit duration %d us",
+		s.chainID, block.Header.Number, sinceT1.Microseconds())
 	s.stateMetrics.CommitDuration.With("channel", s.chainID).Observe(sinceT1.Seconds())
 
 	// Update ledger height

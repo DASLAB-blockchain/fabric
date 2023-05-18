@@ -510,7 +510,13 @@ func (l *kvLedger) CommitLegacy(pvtdataAndBlock *ledger.BlockAndPvtData, commitO
 	}
 	elapsedHistoryDB := time.Since(startHistoryDB)
 
-	logger.Infof("[%s] Committed block [%d] with %d transaction(s) in %dms (state_validation=%dms block_and_pvtdata_commit=%dms state_commit=%dms history_db=%dms)"+
+	l.updateBlockStats(
+		elapsedBlockProcessing,
+		elapsedBlockstorageAndPvtdataCommit,
+		elapsedCommitState,
+		txstatsInfo,
+	)
+	logger.Warnf("[%s] Committed block [%d] with %d transaction(s) in %dms (state_validation=%dms block_and_pvtdata_commit=%dms state_commit=%dms history_db=%dms)"+
 		" commitHash=[%x]",
 		l.ledgerID, block.Header.Number, len(block.Data.Data),
 		time.Since(startBlockProcessing)/time.Millisecond,
@@ -519,12 +525,6 @@ func (l *kvLedger) CommitLegacy(pvtdataAndBlock *ledger.BlockAndPvtData, commitO
 		elapsedCommitState/time.Millisecond,
 		elapsedHistoryDB/time.Millisecond,
 		l.commitHash,
-	)
-	l.updateBlockStats(
-		elapsedBlockProcessing,
-		elapsedBlockstorageAndPvtdataCommit,
-		elapsedCommitState,
-		txstatsInfo,
 	)
 	return nil
 }
