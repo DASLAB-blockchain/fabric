@@ -627,6 +627,10 @@ func (c *Chain) run() {
 				select {
 				case b := <-ch:
 					data := protoutil.MarshalOrPanic(b)
+					c.logger.Warnf("Orderer sends block [%d] to Raft at %v us\n", 
+					  b.Header.Number,
+					  time.Now().UnixMicro())
+					c.logger.Debugf("Proposed block [%d] to raft consensus", b.Header.Number)
 					if err := c.Node.Propose(ctx, data); err != nil {
 						c.logger.Errorf("Failed to propose block [%d] to raft and discard %d blocks in queue: %s", b.Header.Number, len(ch), err)
 						return
@@ -1040,6 +1044,10 @@ func (c *Chain) apply(ents []raftpb.Entry) {
 			block := protoutil.UnmarshalBlockOrPanic(ents[i].Data)
 			c.writeBlock(block, ents[i].Index)
 			c.Metrics.CommittedBlockNumber.Set(float64(block.Header.Number))
+			c.logger.Warnf("Orderer persists block %d (%d txns) at %v us\n", 
+					  block.Header.Number, 
+					  len(block.Data.Data),
+					  time.Now().UnixMicro())
 
 		case raftpb.EntryConfChange:
 			var cc raftpb.ConfChange

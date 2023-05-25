@@ -8,7 +8,7 @@ package blockcutter
 
 import (
 	"time"
-
+	
 	cb "github.com/hyperledger/fabric-protos-go/common"
 	"github.com/hyperledger/fabric/common/channelconfig"
 	"github.com/hyperledger/fabric/common/flogging"
@@ -75,6 +75,8 @@ func (r *receiver) Ordered(msg *cb.Envelope) (messageBatches [][]*cb.Envelope, p
 	if len(r.pendingBatch) == 0 {
 		// We are beginning a new batch, mark the time
 		r.PendingBatchStartTime = time.Now()
+		logger.Warnf("Orderer receives first txn in the block at %v us\n", 
+					  time.Now().UnixMicro())
 	}
 
 	ordererConfig, ok := r.sharedConfigFetcher.OrdererConfig()
