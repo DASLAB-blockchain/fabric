@@ -29,6 +29,10 @@ type Receiver interface {
 
 	// Cut returns the current batch and starts a new one
 	Cut() []*cb.Envelope
+
+	// Get first txn time stamp
+	GetFirstTxnTime() time.Time
+	GetFirstTxnTimeList() []time.Time
 }
 
 type receiver struct {
@@ -39,6 +43,11 @@ type receiver struct {
 	PendingBatchStartTime time.Time
 	ChannelID             string
 	Metrics               *Metrics
+
+
+	// Field to estimate the throughput
+	firstTxnTime		  time.Time
+	firstTxnTimeList	  []time.Time
 }
 
 // NewReceiverImpl creates a Receiver implementation based on the given configtxorderer manager
@@ -47,9 +56,17 @@ func NewReceiverImpl(channelID string, sharedConfigFetcher OrdererConfigFetcher,
 		sharedConfigFetcher: sharedConfigFetcher,
 		Metrics:             metrics,
 		ChannelID:           channelID,
+		firstTxnTime: 		time.Now(),
 	}
 }
 
+func (r *receiver) GetFirstTxnTime() time.Time {
+	return r.firstTxnTime
+}
+
+func (r *receiver) GetFirstTxnTimeList() []time.Time {
+	return r.firstTxnTimeList
+}
 // Ordered should be invoked sequentially as messages are ordered
 //
 // messageBatches length: 0, pending: false
@@ -72,11 +89,14 @@ func NewReceiverImpl(channelID string, sharedConfigFetcher OrdererConfigFetcher,
 //
 // Note that messageBatches can not be greater than 2.
 func (r *receiver) Ordered(msg *cb.Envelope) (messageBatches [][]*cb.Envelope, pending bool) {
+	robust_flag := true
 	if len(r.pendingBatch) == 0 {
 		// We are beginning a new batch, mark the time
 		r.PendingBatchStartTime = time.Now()
+		r.firstTxnTime = r.PendingBatchStartTime
+		r.firstTxnTimeList = append(r.firstTxnTimeList, r.firstTxnTime)
 		logger.Warnf("Orderer receives first txn in the block at %v us\n", 
-					  time.Now().UnixMicro())
+					  r.PendingBatchStartTime.UnixMicro())
 	}
 
 	ordererConfig, ok := r.sharedConfigFetcher.OrdererConfig()
@@ -120,8 +140,21 @@ func (r *receiver) Ordered(msg *cb.Envelope) (messageBatches [][]*cb.Envelope, p
 	r.pendingBatchSizeBytes += messageSizeBytes
 	pending = true
 
+	updateBSFunc := func(maxMessageCount uint32) uint32 {
+		return maxMessageCount
+	}
+
 	if uint32(len(r.pendingBatch)) >= batchSize.MaxMessageCount {
 		logger.Debugf("Batch size met, cutting batch")
+		if robust_flag {
+			delta_time := time.Since(r.firstTxnTime)
+			estimate_thpt := len(r.pendingBatch) * 1000000 / int(delta_time.Microseconds())
+			logger.Warnf("Orderer estimate throughput for this block  is %d txn/s [%d miliseoncds]", 
+							estimate_thpt,
+							int(delta_time.Milliseconds()))
+		}
+		// Change batch size based on function
+		batchSize.MaxMessageCount = updateBSFunc(batchSize.MaxMessageCount)		
 		messageBatch := r.Cut()
 		messageBatches = append(messageBatches, messageBatch)
 		pending = false
