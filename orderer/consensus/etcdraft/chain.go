@@ -200,6 +200,9 @@ type Chain struct {
 	haltCallback func()
 	// BCCSP instane
 	CryptoProvider bccsp.BCCSP
+
+	// Added by vic
+	recieveBatchId int
 }
 
 // NewChain constructs a chain object.
@@ -336,6 +339,7 @@ func NewChain(
 		},
 	}
 
+	c.recieveBatchId = 0
 	return c, nil
 }
 
@@ -686,6 +690,7 @@ func (c *Chain) run() {
 				stopTimer()
 			}
 
+			c.recieveBatchId += len(batches)
 			c.propose(propC, bc, batches...)
 
 			if c.configInflight {
@@ -788,6 +793,7 @@ func (c *Chain) run() {
 			}
 
 			c.logger.Debugf("Batch timer expired, creating block")
+			c.recieveBatchId += len(batch)
 			c.propose(propC, bc, batch) // we are certain this is normal block, no need to block
 
 		case sn := <-c.snapC:
@@ -897,6 +903,11 @@ func (c *Chain) ordered(msg *orderer.SubmitRequest) (batches [][]*common.Envelop
 		}
 	}
 	batches, pending = c.support.BlockCutter().Ordered(msg.Payload)
+	if len(batches) > 0 {
+		c.logger.Warnf("Orderer estimate throughput for this block [%d] is %d txn/s", 
+								c.recieveBatchId+1,
+								c.support.BlockCutter().GetEstimateThpt())
+	}
 	return batches, pending, nil
 
 }

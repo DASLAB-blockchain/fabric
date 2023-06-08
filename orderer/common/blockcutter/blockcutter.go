@@ -31,8 +31,7 @@ type Receiver interface {
 	Cut() []*cb.Envelope
 
 	// Get first txn time stamp
-	GetFirstTxnTime() time.Time
-	GetFirstTxnTimeList() []time.Time
+	GetEstimateThpt() int
 }
 
 type receiver struct {
@@ -48,6 +47,8 @@ type receiver struct {
 	// Field to estimate the throughput
 	firstTxnTime		  time.Time
 	firstTxnTimeList	  []time.Time
+
+	estimateThpt		  int
 }
 
 // NewReceiverImpl creates a Receiver implementation based on the given configtxorderer manager
@@ -57,15 +58,12 @@ func NewReceiverImpl(channelID string, sharedConfigFetcher OrdererConfigFetcher,
 		Metrics:             metrics,
 		ChannelID:           channelID,
 		firstTxnTime: 		time.Now(),
+		estimateThpt: 		0,
 	}
 }
 
-func (r *receiver) GetFirstTxnTime() time.Time {
-	return r.firstTxnTime
-}
-
-func (r *receiver) GetFirstTxnTimeList() []time.Time {
-	return r.firstTxnTimeList
+func (r *receiver) GetEstimateThpt() int {
+	return r.estimateThpt
 }
 // Ordered should be invoked sequentially as messages are ordered
 //
@@ -149,9 +147,7 @@ func (r *receiver) Ordered(msg *cb.Envelope) (messageBatches [][]*cb.Envelope, p
 		if robust_flag {
 			delta_time := time.Since(r.firstTxnTime)
 			estimate_thpt := len(r.pendingBatch) * 1000000 / int(delta_time.Microseconds())
-			logger.Warnf("Orderer estimate throughput for this block  is %d txn/s [%d miliseoncds]", 
-							estimate_thpt,
-							int(delta_time.Milliseconds()))
+			r.estimateThpt = estimate_thpt
 		}
 		// Change batch size based on function
 		batchSize.MaxMessageCount = updateBSFunc(batchSize.MaxMessageCount)		
