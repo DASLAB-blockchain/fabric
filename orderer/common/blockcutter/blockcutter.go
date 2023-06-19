@@ -46,8 +46,8 @@ type receiver struct {
 
 	// Field to estimate the throughput
 	firstTxnTime		  time.Time
-	firstTxnTimeList	  []time.Time
-
+	// Get timestamp list 
+	txnTimeList			  []int64
 	estimateThpt		  int
 	txnCnt				  int
 }
@@ -61,6 +61,7 @@ func NewReceiverImpl(channelID string, sharedConfigFetcher OrdererConfigFetcher,
 		firstTxnTime: 		time.Now(),
 		estimateThpt: 		0,
 		txnCnt: 			0,
+		txnTimeList: 		nil,
 	}
 }
 
@@ -91,11 +92,11 @@ func (r *receiver) GetEstimateThpt() int {
 func (r *receiver) Ordered(msg *cb.Envelope) (messageBatches [][]*cb.Envelope, pending bool) {
 	robust_flag := true
 	change_thpt_flag := false
+	display_time_stamp_flag := true
 	if len(r.pendingBatch) == 0 {
 		// We are beginning a new batch, mark the time
 		r.PendingBatchStartTime = time.Now()
 		r.firstTxnTime = r.PendingBatchStartTime
-		r.firstTxnTimeList = append(r.firstTxnTimeList, r.firstTxnTime)
 		logger.Warnf("Orderer receives first txn in the block at %v us\n", 
 					  r.PendingBatchStartTime.UnixMicro())
 	}
@@ -140,6 +141,8 @@ func (r *receiver) Ordered(msg *cb.Envelope) (messageBatches [][]*cb.Envelope, p
 	r.pendingBatch = append(r.pendingBatch, msg)
 	r.pendingBatchSizeBytes += messageSizeBytes
 	pending = true
+	// Enqueue timestamp into the batch
+	r.txnTimeList = append(r.txnTimeList, time.Now().UnixMicro())
 
 
 	if uint32(len(r.pendingBatch)) >= batchSize.MaxMessageCount {
@@ -163,6 +166,10 @@ func (r *receiver) Ordered(msg *cb.Envelope) (messageBatches [][]*cb.Envelope, p
 				logger.Warnf("Now has processed %v txns and update blockSize to %d", r.txnCnt, batchSize.MaxMessageCount)	
 			}
 		}
+
+		if (display_time_stamp_flag) {
+			logger.Warnf("Txn timestamp(us) in this batch: %v", r.txnTimeList)
+		}
 		messageBatch := r.Cut()
 		messageBatches = append(messageBatches, messageBatch)
 		pending = false
@@ -180,6 +187,7 @@ func (r *receiver) Cut() []*cb.Envelope {
 	batch := r.pendingBatch
 	r.pendingBatch = nil
 	r.pendingBatchSizeBytes = 0
+	r.txnTimeList = nil
 	return batch
 }
 
