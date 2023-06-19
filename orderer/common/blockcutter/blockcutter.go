@@ -49,6 +49,7 @@ type receiver struct {
 	firstTxnTimeList	  []time.Time
 
 	estimateThpt		  int
+	txnCnt				  int
 }
 
 // NewReceiverImpl creates a Receiver implementation based on the given configtxorderer manager
@@ -59,6 +60,7 @@ func NewReceiverImpl(channelID string, sharedConfigFetcher OrdererConfigFetcher,
 		ChannelID:           channelID,
 		firstTxnTime: 		time.Now(),
 		estimateThpt: 		0,
+		txnCnt: 			0,
 	}
 }
 
@@ -88,6 +90,7 @@ func (r *receiver) GetEstimateThpt() int {
 // Note that messageBatches can not be greater than 2.
 func (r *receiver) Ordered(msg *cb.Envelope) (messageBatches [][]*cb.Envelope, pending bool) {
 	robust_flag := true
+	change_thpt_flag := false
 	if len(r.pendingBatch) == 0 {
 		// We are beginning a new batch, mark the time
 		r.PendingBatchStartTime = time.Now()
@@ -138,11 +141,10 @@ func (r *receiver) Ordered(msg *cb.Envelope) (messageBatches [][]*cb.Envelope, p
 	r.pendingBatchSizeBytes += messageSizeBytes
 	pending = true
 
-	updateBSFunc := func(maxMessageCount uint32) uint32 {
-		return maxMessageCount
-	}
 
 	if uint32(len(r.pendingBatch)) >= batchSize.MaxMessageCount {
+		prevCnt := r.txnCnt
+		r.txnCnt += len(r.pendingBatch)
 		logger.Debugf("Batch size met, cutting batch")
 		if robust_flag {
 			delta_time := time.Since(r.firstTxnTime)
@@ -150,7 +152,17 @@ func (r *receiver) Ordered(msg *cb.Envelope) (messageBatches [][]*cb.Envelope, p
 			r.estimateThpt = estimate_thpt
 		}
 		// Change batch size based on function
-		batchSize.MaxMessageCount = updateBSFunc(batchSize.MaxMessageCount)		
+		THR1 := 2000
+		THR2 := 3000
+		if change_thpt_flag {
+			if prevCnt < THR1 && r.txnCnt >= THR1 {
+				batchSize.MaxMessageCount = 17
+				logger.Warnf("Now has processed %v txns and update blockSize to %d", r.txnCnt, batchSize.MaxMessageCount)	
+			} else if prevCnt < THR2 && r.txnCnt >= THR2 {
+				batchSize.MaxMessageCount = 10
+				logger.Warnf("Now has processed %v txns and update blockSize to %d", r.txnCnt, batchSize.MaxMessageCount)	
+			}
+		}
 		messageBatch := r.Cut()
 		messageBatches = append(messageBatches, messageBatch)
 		pending = false
